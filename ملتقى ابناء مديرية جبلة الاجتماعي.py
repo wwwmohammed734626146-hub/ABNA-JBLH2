@@ -1,284 +1,211 @@
 import streamlit as st
 import pandas as pd
+import os
 
-# ==========================================
-# 1. إعدادات الصفحة الأساسية والتنسيق
-# ==========================================
+# 1. إعدادات الصفحة
 st.set_page_config(
-    page_title="لوحة التحكم الموحدة للملتقى - مديرية جبلة",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="نظام إدارة ملتقى أبناء مديرية جبلة الاجتماعي",
+    page_icon="🏛️",
+    layout="wide"
 )
 
-# تطبيق اتجاه النص من اليمين إلى اليسار (RTL)
-st.markdown("""
-    <style>
-    .main {
-        direction: rtl;
-        text-align: right;
-    }
-    div[data-testid="stMetricValue"] {
-        font-size: 26px;
-        font-weight: bold;
-    }
-    div[class*="stTextInput"], div[class*="stSelectbox"], div[class*="stNumberInput"], div[class*="stTextArea"] {
-        text-align: right;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# اسم ملف البيانات
+EXCEL_FILE = "data.xlsx"
 
-# ==========================================
-# 2. إدارة حالة الجلسة (Session State)
-# ==========================================
-if "is_admin" not in st.session_state:
-    st.session_state["is_admin"] = False
+# قائمة اللجان الرسمية التابعة للملتقى
+COMMITTEES = [
+    "اللجنة الاجتماعية",
+    "اللجنة القانونية",
+    "اللجنة الإعلامية",
+    "اللجنة العسكرية",
+    "اللجنة المالية"
+]
 
-# ==========================================
-# 3. الشريط الجانبي (Sidebar) - تسجيل الدخول
-# ==========================================
-st.sidebar.title("🔐 دخول الإدارة")
+# إنشاء ملف إكسل افتراضي إذا لم يكن موجوداً
+if not os.path.exists(EXCEL_FILE):
+    df_init = pd.DataFrame(columns=[
+        "رقم الاستمارة", "الاسم الكامل", "رقم الهوية", "رقم الهاتف", 
+        "المحافظة الأصلية", "المديرية", "عدد أفراد الأسرة", "حالة السكن", "اللجنة التابعة", "ملاحظات"
+    ])
+    df_init.to_excel(EXCEL_FILE, index=False)
 
-if not st.session_state["is_admin"]:
-    with st.sidebar.form("login_form"):
-        username = st.text_input("اسم المستخدم")
-        password = st.text_input("كلمة المرور", type="password")
-        submit_button = st.form_submit_button("تسجيل الدخول")
-        
-        if submit_button:
-            # يمكنك تعديل كلمة المرور واسم المستخدم من هنا
-            if username == "admin" and password == "123456":
-                st.session_state["is_admin"] = True
-                st.sidebar.success("تم تسجيل الدخول بنجاح!")
-                st.rerun()
-            else:
-                st.sidebar.error("اسم المستخدم أو كلمة المرور غير صحيحة")
+# 2. تهيئة جلسة المستخدم (Session State)
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+if 'user_role' not in st.session_state:
+    st.session_state['user_role'] = None
+if 'username' not in st.session_state:
+    st.session_state['username'] = ""
+
+# 3. القائمة الجانبية وتحديد الصلاحيات
+st.sidebar.title("🏛️ ملتقى جبلة الاجتماعي")
+
+# نموذج تسجيل الدخول في القائمة الجانبية
+if not st.session_state['logged_in']:
+    st.sidebar.subheader("🔑 تسجيل الدخول")
+    user_input = st.sidebar.text_input("اسم المستخدم")
+    pass_input = st.sidebar.text_input("كلمة المرور", type="password")
+    
+    if st.sidebar.button("تسجيل الدخول"):
+        if user_input == "admin" and pass_input == "123456":
+            st.session_state['logged_in'] = True
+            st.session_state['user_role'] = 'admin'
+            st.session_state['username'] = 'مدير النظام (المشرف)'
+            st.sidebar.success("تم تسجيل الدخول كمدير نظام!")
+            st.rerun()
+        elif user_input == "user" and pass_input == "1234":
+            st.session_state['logged_in'] = True
+            st.session_state['user_role'] = 'user'
+            st.session_state['username'] = 'مدخل بيانات'
+            st.sidebar.success("تم تسجيل الدخول كمستخدم!")
+            st.rerun()
+        else:
+            st.sidebar.error("بيانات الدخول غير صحيحة!")
 else:
-    st.sidebar.success("أنت مسجل كـ **مدير النظام**")
+    st.sidebar.write(f"مرحباً بك: **{st.session_state['username']}**")
     if st.sidebar.button("تسجيل الخروج"):
-        st.session_state["is_admin"] = False
+        st.session_state['logged_in'] = False
+        st.session_state['user_role'] = None
+        st.session_state['username'] = ""
         st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **ملاحظة:** بطاقات رصيد الصندوق والسلال الموزعة مخفية تلقائياً وتظهر فقط للمدراء.")
 
-# ==========================================
-# 4. الترويسة الرئيسية للوحة التحكم
-# ==========================================
-st.title("📊 لوحة التحكم الموحدة للملتقى")
-st.subheader("الجمهورية اليمنية - ملتقى أبناء مديرية جبلة - اللجنة الاجتماعية")
-st.markdown("---")
+# 4. تحديد القوائم المتاحة بناءً على الصلاحيات
+menu_options = [
+    "📊 لوحة التحكم الإحصائية", 
+    "📝 تعبئة استمارة جديدة"
+]
 
-# قيم الإحصائيات (يمكن ربطها مع قاعدة البيانات مستقبلاً)
-val_fund = "0 ر.ي"         # رصيد الصندوق
-val_baskets = "0 سلة"       # السلال الموزعة
-val_beneficiaries = "0 فرد" # إجمالي الأفراد المستفيدين
-val_forms = "0 استمارة"     # إجمالي الاستمارات
+# إضافة كافة قوائم مدير النظام المتقدمة فقط للمشرف (admin)
+if st.session_state['logged_in'] and st.session_state['user_role'] == 'admin':
+    menu_options.extend([
+        "🔍 عرض استمارات النازحين",
+        "✏️ تعديل بيانات الاستمارات",
+        "🏢 إدارة اللجان المتخصصة",
+        "📦 توزيع السلال الغذائية",
+        "🤝 إدارة الكفالات والرعايات",
+        "📁 الأرشيف والمستندات",
+        "💰 الصندوق والحسابات (الوارد والمنصرف)",
+        "👥 إدارة القوى البشرية والكادر",
+        "🔐 إدارة المستخدمين وكلمات المرور",
+        "📥 تصدير التقارير (Excel)"
+    ])
 
-# ==========================================
-# 5. عرض البطاقات (Metrics) حسب الصلاحية
-# ==========================================
-if st.session_state["is_admin"]:
-    # إذا كان المستخدم مديراً: عرض جميع البطاقات الـ 4
+choice = st.sidebar.radio("القائمة الرئيسية:", menu_options)
+
+# ---------------------------------------------------------
+# صفحات النظام
+# ---------------------------------------------------------
+
+if choice == "📊 لوحة التحكم الإحصائية":
+    st.title("📊 لوحة التحكم الموحدة للملتقى")
+    st.subheader("الجمهورية اليمنية - ملتقى أبناء مديرية جبلة")
+    st.markdown("---")
+    df = pd.read_excel(EXCEL_FILE)
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric(label="رصيد الصندوق الحالي 💰", value=val_fund)
-    with col2:
-        st.metric(label="السلال الموزعة 📦", value=val_baskets)
-    with col3:
-        st.metric(label="إجمالي الأفراد المستفيدين 👥", value=val_beneficiaries)
-    with col4:
-        st.metric(label="إجمالي الاستمارات 📄", value=val_forms)
-else:
-    # للزوار والعموم: عرض البطاقات العامة فقط (2) وإخفاء المالية والسلال
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric(label="إجمالي الأفراد المستفيدين 👥", value=val_beneficiaries)
-    with col2:
-        st.metric(label="إجمالي الاستمارات 📄", value=val_forms)
+    col1.metric("إجمالي الاستمارات", f"{len(df)} استمارة")
+    total_family = df['عدد أفراد الأسرة'].sum() if 'عدد أفراد الأسرة' in df.columns and not df.empty else 0
+    col2.metric("إجمالي الأفراد المستفيدين", f"{int(total_family)} فرد")
+    col3.metric("عدد اللجان التابعة", f"{len(COMMITTEES)} لجان")
+    col4.metric("رصيد الصندوق الحالي", "0 ر.ي")
 
-st.markdown("---")
-
-# ==========================================
-# 6. التبويبات الرئيسية لتعبئة وإدارة الاستمارات
-# ==========================================
-tab_form, tab_records, tab_manage = st.tabs(["📋 تعبئة استمارة نزوح جديدة", "📁 سجل الاستمارات", "⚙️ إدارة النظام"])
-
-# ------------------------------------------
-# التبويب الأول: تعبئة استمارة نزوح كاملاً
-# ------------------------------------------
-with tab_form:
-    st.header("📋 استمارة نزوح - اللجنة الاجتماعية")
-    
-    with st.form("displacement_full_form", clear_on_submit=False):
+elif choice == "📝 تعبئة استمارة جديدة":
+    st.title("📝 استمارة حصر وتجميع البيانات")
+    with st.form("displacement_form", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        form_id = c1.text_input("رقم الاستمارة")
+        full_name = c2.text_input("الاسم الكامل للمستفيد")
         
-        # 1. الترويسة
-        st.subheader("1️⃣ البيانات الأساسية للترويسة")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: num = st.text_input("الرقم")
-        with c2: date_val = st.date_input("التاريخ")
-        with c3: hijri_date = st.text_input("الموافق (هجري)")
-        with c4: attachments = st.text_input("الملحقات")
-
-        st.markdown("---")
-
-        # 2. بيانات رب الأسرة
-        st.subheader("2️⃣ بيانات رب الأسرة")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1: head_name = st.text_input("اسم رب الأسرة رباعياً*")
-        with col2: phone = st.text_input("رقم التلفون")
-        with col3: edu_level = st.selectbox("المستوى التعليمي", ["امي", "ابتدائي", "إعدادي", "ثانوي", "جامعي", "حاصل على مؤهل"])
-        with col4: id_card = st.text_input("رقم البطاقة الشخصية")
-
-        col5, col6, col7, col8 = st.columns(4)
-        with col5: job_type = st.text_input("نوع العمل")
-        with col6: job_place = st.text_input("جهة العمل")
-        with col7: qualification = st.text_input("المؤهل العلمي")
-        with col8: specialization = st.text_input("التخصص")
-
-        col9, col10, col11, col12 = st.columns(4)
-        with col9: blood_type = st.selectbox("فصيلة الدم", ["غير معروف", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"])
-        with col10: health_status = st.text_input("الحالة الصحية")
-        with col11: disease_type = st.text_input("نوع المرض إن وجد")
-        with col12: id_issue_place = st.text_input("مكان الإصدار للبطاقة")
-
-        st.markdown("---")
-
-        # 3. بيانات السكن والنزوح
-        st.subheader("3️⃣ بيانات السكن والنزوح")
-        st.markdown("**السكن الأصلي:**")
-        ca1, ca2, ca3, ca4 = st.columns(4)
-        with ca1: orig_gov = st.text_input("المحافظة (الأصلية)")
-        with ca2: orig_dir = st.text_input("المديرية (الأصلية)")
-        with ca3: orig_uzla = st.text_input("العزلة (الأصلية)")
-        with ca4: orig_village = st.text_input("القرية / الحارة (الأصلية)")
-
-        st.markdown("**مكان قبل النزوح:**")
-        cb1, cb2, cb3, cb4 = st.columns(4)
-        with cb1: prev_gov = st.text_input("المحافظة (قبل النزوح)")
-        with cb2: prev_dir = st.text_input("المديرية (قبل النزوح)")
-        with cb3: prev_uzla = st.text_input("العزلة (قبل النزوح)")
-        with cb4: prev_village = st.text_input("القرية / الحارة (قبل النزوح)")
-
-        st.markdown("---")
-
-        # 4. بيانات أقرب صلة قرابة
-        st.subheader("4️⃣ بيانات أقرب صلة قرابة")
-        ck1, ck2, ck3, ck4, ck5 = st.columns(5)
-        with ck1: kin_name = st.text_input("اسم أقرب صلة قرابة")
-        with ck2: kin_rel = st.text_input("صلة القرابة")
-        with ck3: kin_phone = st.text_input("رقم الجوال")
-        with ck4: family_status = st.selectbox("حالة الأسرة", ["مقيم", "نازح", "عائد"])
-        with ck5: disp_date_count = st.text_input("تاريخ / عدد مرات النزوح")
-
-        st.markdown("---")
-
-        # 5. إحصاء أفراد الأسرة التفصيلي
-        st.subheader("5️⃣ إحصاء عدد أفراد الأسرة")
-        spouse_name = st.text_input("اسم الزوج / الزوجة رباعياً")
+        c3, c4 = st.columns(2)
+        national_id = c3.text_input("رقم الهوية / البطاقة الشخصية")
+        phone = c4.text_input("رقم الهاتف للتواصل")
         
-        st.markdown("**توزيع الأفراد حسب الفئات العمرية والجنس:**")
+        c5, c6 = st.columns(2)
+        orig_gov = c5.text_input("المحافظة الأصلية")
+        orig_dir = c6.text_input("المديرية")
         
-        # أسطر الإدخال للذكور والإناث
-        st.caption("الذكور:")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        with m1: m_under1 = st.number_input("ذكور أقل من سنة", min_value=0, step=1)
-        with m2: m_1_5 = st.number_input("ذكور (1 - 5)", min_value=0, step=1)
-        with m3: m_6_17 = st.number_input("ذكور (6 - 17)", min_value=0, step=1)
-        with m4: m_18_59 = st.number_input("ذكور (18 - 59)", min_value=0, step=1)
-        with m5: m_60plus = st.number_input("ذكور (60+)", min_value=0, step=1)
-
-        st.caption("الإناث:")
-        f1, f2, f3, f4, f5 = st.columns(5)
-        with f1: f_under1 = st.number_input("إناث أقل من سنة", min_value=0, step=1)
-        with f2: f_1_5 = st.number_input("إناث (1 - 5)", min_value=0, step=1)
-        with f3: f_6_17 = st.number_input("إناث (6 - 17)", min_value=0, step=1)
-        with f4: f_18_59 = st.number_input("إناث (18 - 59)", min_value=0, step=1)
-        with f5: f_60plus = st.number_input("إناث (60+)", min_value=0, step=1)
-
-        tot1, tot2 = st.columns(2)
-        with tot1: disabled_count = st.number_input("عدد المعاقين", min_value=0, step=1)
-        with tot2: breadwinner_count = st.number_input("عدد المكفولين", min_value=0, step=1)
-
-        st.markdown("---")
-
-        # 6. السكن الحالي
-        st.subheader("6️⃣ السكن الحالي")
-        h1, h2, h3, h4, h5 = st.columns(5)
-        with h1: house_num = st.text_input("رقم البيت")
-        with h2: house_type = st.text_input("نوع البيت")
-        with h3: rent_own = st.selectbox("ملكية البيت", ["ملك", "إيجار", "استضافة", "مأوى"])
-        with h4: landlord_name = st.text_input("اسم صاحب البيت المؤجر إن وجد")
-        with h5: landlord_phone = st.text_input("رقم الجوال (لصاحب البيت)")
-
-        st.markdown("---")
-
-        # 7. أهم الاحتياجات والمنظمات
-        st.subheader("7️⃣ أهم الاحتياجات والمنظمات")
-        st.write("حدد الاحتياجات الرئيسية المطلوبة:")
+        c7, c8, c9 = st.columns(3)
+        family_members = c7.number_input("عدد أفراد الأسرة", min_value=1, value=1, step=1)
+        housing_status = c8.selectbox("حالة السكن", ["مستأجر", "مستضاف", "مأوى موقت", "ملك"])
+        selected_committee = c9.selectbox("اللجنة المشرفة / التابع لها", COMMITTEES)
         
-        req_col1, req_col2, req_col3, req_col4 = st.columns(4)
-        with req_col1:
-            req_shelter = st.checkbox("مأوى")
-            req_items = st.checkbox("مواد إيواء")
-        with req_col2:
-            req_water = st.checkbox("خزان مياه")
-            req_food = st.checkbox("غذاء")
-        with req_col3:
-            req_medical = st.checkbox("طبية")
-            req_school = st.checkbox("حقيبة مدرسية")
-        with req_col4:
-            req_toilets = st.checkbox("حمامات")
-
-        o1, o2 = st.columns(2)
-        with o1: in_wfp = st.selectbox("هل مسجل في الغذاء العالمي؟", ["لا", "نعم"])
-        with o2: current_org = st.text_input("ما هي المنظمة المقدمة حالياً؟")
+        notes = st.text_area("ملاحظات إضافية أو احتياجات خاصة")
         
-        other_needs = st.text_area("الاحتياجات الأخرى")
-
-        st.markdown("---")
-        
-        # 8. وثائق المرفقات والتوقيعات
-        st.subheader("8️⃣ وثائق المرفقات والاعتماد")
-        attachments_info = st.text_input("المرفقات (إن وجدت لأصحاب الحالات)")
-        
-        sig1, sig2, sig3 = st.columns(3)
-        with sig1: st.text_input("اسم مندوب العزلة")
-        with sig2: st.caption("رئيس اللجنة الاجتماعية: **صلاح صادق عقلان**")
-        with sig3: st.caption("رئيس الملتقى: **إبراهيم محمد سعيد الشرعبي**")
-
-        # زر الحفظ والارسال
-        submitted = st.form_submit_button("💾 حفظ الاستمارة وتحديث البيانات")
-        if submitted:
-            if head_name.strip() == "":
-                st.error("يرجى إدخال اسم رب الأسرة على الأقل لحفظ الاستمارة.")
+        submit = st.form_submit_button("💾 حفظ الاستمارة")
+        if submit:
+            if full_name and form_id:
+                new_data = {
+                    "رقم الاستمارة": form_id, "الاسم الكامل": full_name,
+                    "رقم الهوية": national_id, "رقم الهاتف": phone,
+                    "المحافظة الأصلية": orig_gov, "المديرية": orig_dir,
+                    "عدد أفراد الأسرة": family_members, "حالة السكن": housing_status,
+                    "اللجنة التابعة": selected_committee,
+                    "ملاحظات": notes
+                }
+                df = pd.read_excel(EXCEL_FILE)
+                df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+                df.to_excel(EXCEL_FILE, index=False)
+                st.success(f"تم حفظ استمارة الأخ/ت ({full_name}) وتوجيهها إلى ({selected_committee}) بنجاح!")
             else:
-                st.success(f"تم حفظ بيانات استمارة ({head_name}) بنجاح!")
+                st.error("يرجى تعبئة الحقول الأساسية.")
 
-# ------------------------------------------
-# التبويب الثاني: سجل الاستمارات المسجلة
-# ------------------------------------------
-with tab_records:
-    st.header("📁 سجل الاستمارات المسجلة")
-    
-    # جدول نموذجي لعرض الاستمارات المسجلة
-    demo_data = {
-        "رقم الاستمارة": [101, 102],
-        "اسم رب الأسرة": ["محمد علي أحمد", "عبدالله صالح حسن"],
-        "رقم التلفون": ["770000000", "730000000"],
-        "العزلة / القرية": ["جبلة - المركز", "الربادي"],
-        "حالة الأسرة": ["نازح", "مقيم"],
-        "تاريخ التسجيل": ["2026-07-01", "2026-07-15"]
-    }
-    st.dataframe(pd.DataFrame(demo_data), use_container_width=True)
-
-# ------------------------------------------
-# التبويب الثالث: إدارة النظام (للمشرفين)
-# ------------------------------------------
-with tab_manage:
-    if st.session_state["is_admin"]:
-        st.header("⚙️ لوحة إدارة المشرفين والصلاحيات")
-        st.write("أهلاً بك في قسم الإدارة. يمكنك من هنا متابعة وتحديث السلال الموزعة، الأرصدة المالية، وإدارة الحسابات.")
+elif choice == "🔍 عرض استمارات النازحين":
+    st.title("🔍 عرض وإدارة كافة استمارات النازحين")
+    df = pd.read_excel(EXCEL_FILE)
+    if df.empty:
+        st.warning("لا توجد استمارات مسجلة حالياً.")
     else:
-        st.warning("🔒 هذا القسم مخصص لمدراء النظام فقط. يرجى تسجيل الدخول عبر الشريط الجانبي لوصول الإدارة.")
+        st.dataframe(df, use_container_width=True)
+
+elif choice == "🏢 إدارة اللجان المتخصصة":
+    st.title("🏢 اللجان الرسمية التابعة لملتقى أبناء مديرية جبلة")
+    st.info("قسم مخصص لعرض وتصنيف البيانات والمهام حسب اللجان التابعة للملتقى.")
+    
+    # عرض اللجان الخمس في بطاقات
+    cols = st.columns(3)
+    for i, comm in enumerate(COMMITTEES):
+        with cols[i % 3]:
+            st.markdown(f"### 📌 {comm}")
+            df = pd.read_excel(EXCEL_FILE)
+            count = len(df[df['اللجنة التابعة'] == comm]) if 'اللجنة التابعة' in df.columns else 0
+            st.metric("عدد الاستمارات والمرتبطين", f"{count} معني")
+
+elif choice == "✏️ تعديل بيانات الاستمارات":
+    st.title("✏️ تعديل بيانات الاستمارات المسجلة")
+    st.info("قسم مخصص لمدير النظام لتعديل أو تحديث الاستمارات.")
+
+elif choice == "📦 توزيع السلال الغذائية":
+    st.title("📦 إدارة توزيع السلال الغذائية (اللجنة الاجتماعية)")
+    st.info("تسجيل وقيد السلال الموزعة للمستفيدين.")
+
+elif choice == "🤝 إدارة الكفالات والرعايات":
+    st.title("🤝 إدارة كفالات الأسر والأيتام والرعايات")
+    st.info("سجل الكفلاء والمستفيدين من الرعايات الشهرية.")
+
+elif choice == "📁 الأرشيف والمستندات":
+    st.title("📁 الأرشيف الرقمي والمستندات (اللجنة الإعلامية/القانونية)")
+    st.info("رفع وأرشفة وثائق الاستمارات والهويات.")
+
+elif choice == "💰 الصندوق والحسابات (الوارد والمنصرف)":
+    st.title("💰 إدارة الصندوق المالية (اللجنة المالية)")
+    st.info("تسجيل المقبوضات والمصروفات المالية الخاصة بالملتقى.")
+
+elif choice == "👥 إدارة القوى البشرية والكادر":
+    st.title("👥 إدارة القوى البشرية وكادر الملتقى (اللجنة العسكرية/الإدارية)")
+    st.info("سجل الأعضاء واللجان العاملة في المديرية.")
+
+elif choice == "🔐 إدارة المستخدمين وكلمات المرور":
+    st.title("🔐 إدارة حسابات المستخدمين والتصاريح")
+    st.info("إضافة مستخدمين جديد وتغيير كلمات المرور.")
+
+elif choice == "📥 تصدير التقارير (Excel)":
+    st.title("📥 تصدير البيانات والتقارير الشاملة")
+    df = pd.read_excel(EXCEL_FILE)
+    st.download_button(
+        label="📥 تحميل كافة البيانات بملف Excel",
+        data=open(EXCEL_FILE, "rb").read(),
+        file_name="استمارات_ملتقى_جبلة.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
